@@ -4,9 +4,7 @@ import librosa
 import numpy as np
 import torch
 from dataset.data import EvalDataLoader, EvalDataset
-from model.conv_tasnet import ConvTasNet
-from model.dual_path_rnn import Dual_RNN_model
-from model.dptnet import DPTNet
+from model.galr import GALR
 from src.utils import remove_pad
 import json5
 import time
@@ -18,12 +16,8 @@ def main(config):
         print("Must provide mix_dir or mix_json! When providing mix_dir, mix_json is ignored.")
 
     # 加载模型
-    if config["model"] == "conv_tasnet":
-        model = ConvTasNet.load_model(config["model_path"])
-    elif config["model"] == "dual_path_rnn":
-        model = Dual_RNN_model.load_model(config["model_path"])
-    elif config["model"] == "dptnet":
-        model = DPTNet.load_model(config["model_path"])
+    if config["model"] == "galr":
+        model = GALR.load_model(config["model_path"])
     else:
         print("No loaded model!")
 
