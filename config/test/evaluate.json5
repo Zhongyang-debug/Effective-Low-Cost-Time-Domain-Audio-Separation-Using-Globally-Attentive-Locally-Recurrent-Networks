@@ -1,5 +1,5 @@
 {
-  "model": "dual_path_rnn",
+  "model": "galr",
 
   "model_path": "./checkpoint/final.path.tar",
 
