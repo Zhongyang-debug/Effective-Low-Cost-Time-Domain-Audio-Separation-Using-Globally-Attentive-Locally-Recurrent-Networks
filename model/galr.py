@@ -323,9 +323,13 @@ class Separation(nn.Module):
 
         x = self.Conv1x1(x)  # torch.Size([2, 128, 31999])
 
-        x = torch.unsqueeze(x, dim=1)
+        _, N, L = x.shape
+
+        x = x.reshape(B, self.Spk, N, L)  # torch.Size([1, 2, 64, 31999])
 
         x = self.ReLU(x)
+
+        x = x.transpose(0, 1)  # torch.Size([2, 1, 64, 31999])
 
         return x
 
