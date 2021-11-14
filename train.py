@@ -38,15 +38,15 @@ def main(config):
 
     # 模型
     if config["model"]["type"] == "galr":
-        model = GALR(in_channels=config["model"]["model"]["in_channels"],
-                     out_channels=config["model"]["model"]["out_channels"],
-                     length=config["model"]["model"]["length"],
-                     hidden_channels=config["model"]["model"]["hidden_channels"],
-                     num_layers=config["model"]["model"]["num_layers"],
-                     bidirectional=config["model"]["model"]["bidirectional"],
-                     num_heads=config["model"]["model"]["num_heads"],
-                     cycle_amount=config["model"]["model"]["cycle_amount"],
-                     speakers=config["model"]["model"]["speakers"])
+        model = GALR(in_channels=config["model"]["galr"]["in_channels"],
+                     out_channels=config["model"]["galr"]["out_channels"],
+                     length=config["model"]["galr"]["length"],
+                     hidden_channels=config["model"]["galr"]["hidden_channels"],
+                     num_layers=config["model"]["galr"]["num_layers"],
+                     bidirectional=config["model"]["galr"]["bidirectional"],
+                     num_heads=config["model"]["galr"]["num_heads"],
+                     cycle_amount=config["model"]["galr"]["cycle_amount"],
+                     speakers=config["model"]["galr"]["speakers"])
     else:
         print("No loaded model!")
 
