@@ -60,18 +60,6 @@ def main(config):
 
             mixture, mix_lengths, filenames = data
 
-            mixture = torch.squeeze(input=mixture, dim=0)
-
-            if mixture.shape[0] % (16000*2) != 0:
-                numPadding = 16000 * 2 - (mixture.shape[0] % (16000 * 2))
-
-                mixture = torch.pad(array=mixture,
-                                    pad_width=(0, numPadding),
-                                    mode="constant",
-                                    constant_values=(0, 0))
-
-            mixture = torch.reshape(mixture, (mixture.shape[0]//(16000 * 2), 16000 * 2))
-
             if torch.cuda.is_available():
 
                 mixture = mixture.cuda()
