@@ -120,15 +120,15 @@ class Locally_Recurrent(nn.Module):
 
         residual1 = x  # 残余连接
 
-        x, _ = self.Bi_LSTM(x)  # 双向 LSTM, torch.Size([200, 322, 256])
+        x, _ = self.Bi_LSTM(x)  # 双向 LSTM, torch.Size([322, 200, 256])
 
-        x = self.Linear(x)  # 线性层减少输出通道, torch.Size([200, 322, 128])
+        x = self.Linear(x)  # 线性层减少输出通道, torch.Size([322, 200, 128])
 
         x = self.LayerNorm(x + residual1)  # 层归一化
 
         del residual1
 
-        x = x.permute(2, 0, 1).reshape(B, N, K, S)  # 恢复原来的维度, torch.Size([1, 128, 200, 322])
+        x = x.reshape(B, S, K, N).permute(0, 3, 2, 1)  # 恢复原来的维度, torch.Size([1, 128, 200, 322])
 
         return x
 
@@ -206,7 +206,7 @@ class Globally_Attentive(nn.Module):
 
         x = self.LayerNorm2(x)
 
-        x = x.permute(2, 0, 1).reshape(B, N, K, S)  # torch.Size([1, 128, 200, 322])
+        x = x.reshape(B, K, S, N).permute(0, 3, 1, 2)  # torch.Size([1, 128, 200, 322])
 
         x = x + residual1  # torch.Size([1, 128, 200, 322])
 
@@ -325,11 +325,11 @@ class Separation(nn.Module):
 
         _, N, L = x.shape
 
-        x = x.reshape(B, self.Spk, N, L)  # torch.Size([1, 2, 64, 31999])
+        x = x.reshape(B, self.Spk, N, L)  # torch.Size([1, 2, 128, 31999])
 
         x = self.ReLU(x)
 
-        x = x.transpose(0, 1)  # torch.Size([2, 1, 64, 31999])
+        x = x.transpose(0, 1)  # torch.Size([2, 1, 128, 31999])
 
         return x
 
