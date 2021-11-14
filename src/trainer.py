@@ -58,15 +58,8 @@ class Trainer(object):
 
             package = torch.load(self.save_folder+self.continue_from, map_location=map_location)
 
-            # """
-            #     https://blog.csdn.net/qq_41563738/article/details/102913920
-            # """
-            # from collections import OrderedDict
-            # new_state_dict = OrderedDict()
-            # for key, value in package['state_dict'].items():
-            #     name = 'module.' + key
-            #     new_state_dict[name] = value
-            # self.model.load_state_dict(new_state_dict)
+            if isinstance(self.model, torch.nn.DataParallel):
+                self.model = self.model.module
 
             self.model.load_state_dict(package['state_dict'])
             self.optimizer.load_state_dict(package['optim_dict'])
@@ -103,6 +96,9 @@ class Trainer(object):
             if self.checkpoint:
                 # 保存每一个训练模型
                 file_path = os.path.join(self.save_folder, 'epoch%d.pth.tar' % (epoch+1))
+                                                    
+                if isinstance(self.model, torch.nn.DataParallel):
+                    self.model = self.model.module
 
                 torch.save(self.model.serialize(self.model,
                                                 self.optimizer,
@@ -171,6 +167,9 @@ class Trainer(object):
                 self.best_val_loss = val_loss  # 最小的验证损失值
 
                 file_path = os.path.join(self.save_folder, self.model_path)
+                
+                if isinstance(self.model, torch.nn.DataParallel):
+                    self.model = self.model.module
 
                 torch.save(self.model.serialize(self.model,
                                                 self.optimizer,
