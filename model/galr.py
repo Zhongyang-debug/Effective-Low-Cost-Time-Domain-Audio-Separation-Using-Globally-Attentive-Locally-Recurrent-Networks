@@ -1,24 +1,24 @@
 import torch
 import torch.nn as nn
 import math
+from torch.autograd import Variable
 
 
 class Encoder(nn.Module):
 
-    def __init__(self, out_channels):
+    def __init__(self, out_channels, kernel_size):
 
         super(Encoder, self).__init__()
 
         self.Conv1d = nn.Conv1d(in_channels=1,
                                 out_channels=out_channels,
-                                kernel_size=2,
-                                stride=1)
+                                kernel_size=kernel_size,
+                                stride=kernel_size//2,
+                                padding=0)
 
         self.ReLU = nn.ReLU()
 
     def forward(self, x):
-
-        x = torch.unsqueeze(x, dim=1)  # torch.Size([1, 32000]) => torch.Size([1, 1, 32000])
 
         x = self.Conv1d(x)  # torch.Size([1, 1, 32000]) => torch.Size([1, 64, 31999])
 
@@ -82,24 +82,11 @@ class Segmentation(nn.Module):
 
 
 class Locally_Recurrent(nn.Module):
-    """
-        LSTM
-        优点：改善了 RNN 中存在的长期依赖问题；LSTM 的表现通常比时间递归神经网络及隐马尔科夫模型（HMM）更好；作为非线性模型，LSTM 可作为复杂
-             的非线性单元用于构造更大型深度神经网络。
-        缺点：一个缺点是 RNN 的梯度问题在 LSTM 及其变种里面得到了一定程度的解决，但还是不够。它可以处理 100 个量级的序列，而对于 1000 个量级，
-             或者更长的序列则依然会显得很棘手；另一个缺点是每一个 LSTM 的 cell 里面都意味着有 4 个全连接层(MLP)，如果 LSTM 的时间跨度很大，
-             并且网络又很深，这个计算量会很大，很耗时。
-    """
 
     def __init__(self, in_channels, hidden_channels=128, num_layers=1, bidirectional=True):
 
         super(Locally_Recurrent, self).__init__()
 
-        """
-            sequence: 序列的个数，每个句子的长度；
-            batch_size：输入模型多少个句子，或者股票数据输入模型多少个时间单位的数据；
-            feature：每个具体的单词用多少维向量表示，或者股票数据中每一个具体时刻采集多少个具体的值。
-        """
         self.Bi_LSTM = nn.LSTM(input_size=in_channels,  # 输入的维度
                                hidden_size=hidden_channels,  # 隐藏层的维度
                                num_layers=num_layers,  # LSTM 的层数
@@ -217,7 +204,7 @@ class Globally_Attentive(nn.Module):
 
 class DALR_Block(nn.Module):
 
-    def __init__(self, in_channels, hidden_channels=128, num_layers=1, bidirectional=True, num_heads=8):
+    def __init__(self, in_channels, length, hidden_channels=128, affine=8, num_layers=1, bidirectional=True, num_heads=8):
 
         super(DALR_Block, self).__init__()
 
@@ -226,22 +213,40 @@ class DALR_Block(nn.Module):
                                                    num_layers=num_layers,
                                                    bidirectional=bidirectional)
 
+        self.Linear1 = nn.Linear(in_features=length, out_features=affine)
+
         self.Globally_Attentive = Globally_Attentive(in_channels=in_channels,
                                                      num_heads=num_heads)
 
+        self.Linear2 = nn.Linear(in_features=affine, out_features=length)
+
     def forward(self, x):
 
-        x = self.Locally_Recurrent(x)
+        B, N, K, S = x.shape  # torch.Size([1, 64, 200, 322])
+
+        x = self.Locally_Recurrent(x)  # torch.Size([1, 64, 200, 322])
+
+        x = x.permute(0, 3, 1, 2)
+
+        x = self.Linear1(x)
+
+        x = x.permute(0, 2, 3, 1)
 
         x = self.Globally_Attentive(x)
+
+        x = x.permute(0, 3, 1, 2)
+
+        x = self.Linear2(x)
+
+        x = x.permute(0, 2, 3, 1)
 
         return x
 
 
 class Separation(nn.Module):
 
-    def __init__(self, in_channels, out_channels, length, hidden_channels=128, num_layers=1, bidirectional=True, num_heads=8, cycle_amount=6,
-                 speakers=2):
+    def __init__(self, in_channels, out_channels, length, hidden_channels=128, affine=8, num_layers=1,
+                 bidirectional=True, num_heads=8, cycle_amount=6, speakers=2):
 
         super(Separation, self).__init__()
 
@@ -259,7 +264,9 @@ class Separation(nn.Module):
 
         for i in range(self.cycle_amount):
             self.DALR_Blocks.append(DALR_Block(in_channels=out_channels,
+                                               length=length,
                                                hidden_channels=hidden_channels,
+                                               affine=affine,
                                                num_layers=num_layers,
                                                bidirectional=bidirectional,
                                                num_heads=num_heads))
@@ -356,66 +363,52 @@ class Separation(nn.Module):
         return input
 
 
-class Decoder(nn.ConvTranspose1d):
-    """
-        Decoder of the TasNet
-        This module can be seen as the gradient of Conv1d with respect to its input.
-        It is also known as a fractionally-strided convolution
-        or a deconvolution (although it is not an actual deconvolution operation).
-    """
+class Decoder(nn.Module):
 
-    def __init__(self, *args, **kwargs):
-        super(Decoder, self).__init__(*args, **kwargs)
+    def __init__(self, in_channels, kernel_size):
+
+        super(Decoder, self).__init__()
+
+        self.ConvTranspose1d = nn.ConvTranspose1d(in_channels=in_channels,  # 256
+                                                  out_channels=1,
+                                                  kernel_size=kernel_size,  # 16
+                                                  stride=kernel_size//2,  # 8
+                                                  padding=0)
 
     def forward(self, x):
-        """
-            x: [B, N, L]
-        """
 
-        if x.dim() not in [2, 3]:
-            raise RuntimeError("{} accept 3/4D tensor as input".format(self.__name__))
-
-        x = super().forward(x if x.dim() == 3 else torch.unsqueeze(x, 1))
-
-        if torch.squeeze(x).dim() == 1:
-            x = torch.squeeze(x, dim=1)
-        else:
-            x = torch.squeeze(x)
+        x = self.ConvTranspose1d(x)
 
         return x
 
 
 class GALR(nn.Module):
 
-    def __init__(self, in_channels, out_channels, length, hidden_channels=128, num_layers=1, bidirectional=True, num_heads=8, cycle_amount=6,
-                 speakers=2):
+    def __init__(self, in_channels, out_channels, kernel_size, length, hidden_channels=128, affine=8,
+                 num_layers=1, bidirectional=True, num_heads=8, cycle_amount=6, speakers=2):
 
         super(GALR, self).__init__()
 
         self.in_channels = in_channels
-
         self.out_channels = out_channels
-
+        self.kernel_size = kernel_size
         self.length = length
-
         self.hidden_channels = hidden_channels
-
+        self.affine = affine
         self.num_layers = num_layers
-
         self.bidirectional = bidirectional
-
         self.num_heads = num_heads
-
         self.cycle_amount = cycle_amount
-
         self.speakers = speakers
 
-        self.Encoder = Encoder(out_channels=self.in_channels)
+        self.Encoder = Encoder(out_channels=self.in_channels,
+                               kernel_size=self.kernel_size)
 
         self.Separation = Separation(in_channels=self.in_channels,
                                      out_channels=self.out_channels,
                                      length=self.length,
                                      hidden_channels=self.hidden_channels,
+                                     affine=affine,
                                      num_layers=self.num_layers,
                                      bidirectional=self.bidirectional,
                                      num_heads=self.num_heads,
@@ -425,12 +418,11 @@ class GALR(nn.Module):
         self.Spk = self.speakers
 
         self.Decoder = Decoder(in_channels=self.in_channels,
-                               out_channels=1,
-                               kernel_size=2,
-                               stride=1,
-                               bias=False)
+                               kernel_size=self.kernel_size)
 
     def forward(self, x):
+
+        x, rest = self.pad_signal(x)
 
         e = self.Encoder(x)  # torch.Size([1, 32000]) => torch.Size([1, 128, 31999])
 
@@ -444,9 +436,36 @@ class GALR(nn.Module):
 
         del out
 
-        audio = torch.stack(audio, dim=1)
+        audio[0] = audio[0][:, :, self.kernel_size // 2:-(rest + self.kernel_size // 2)].contiguous()  # B, 1, T
+        audio[1] = audio[1][:, :, self.kernel_size // 2:-(rest + self.kernel_size // 2)].contiguous()  # B, 1, T
+        audio = torch.cat(audio, dim=1)  # [B, C, T]
 
         return audio
+
+    def pad_signal(self, x):
+
+        # 输入波形: (B, T) or (B, 1, T)
+        # 调整和填充
+
+        if x.dim() not in [2, 3]:
+            raise RuntimeError("Input can only be 2 or 3 dimensional.")
+
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+
+        batch_size = x.size(0)  # 每一个批次的大小
+        nsample = x.size(2)  # 单个数据的长度
+        rest = self.kernel_size - (self.kernel_size // 2 + nsample % self.kernel_size) % self.kernel_size
+
+        if rest > 0:
+            pad = Variable(torch.zeros(batch_size, 1, rest)).type(x.type())
+            x = torch.cat([x, pad], dim=2)
+
+        pad_aux = Variable(torch.zeros(batch_size, 1, self.kernel_size // 2)).type(x.type())
+
+        x = torch.cat([pad_aux, x, pad_aux], 2)
+
+        return x, rest
 
     @classmethod
     def load_model(cls, path):
@@ -456,21 +475,28 @@ class GALR(nn.Module):
 
     @classmethod
     def load_model_from_package(cls, package):
-        model = cls(in_channels=package['in_channels'], out_channels=package['out_channels'], length=package['length'],
-                    hidden_channels=package['hidden_channels'], num_layers=package['num_layers'],
-                    bidirectional=package['bidirectional'], num_heads=package['num_heads'],
-                    cycle_amount=package['cycle_amount'], speakers=package['speakers'])
+
+        model = cls(in_channels=package['in_channels'], out_channels=package['out_channels'],
+                    kernel_size=package['kernel_size'], length=package['length'],
+                    hidden_channels=package['hidden_channels'], affine=package['affine'],
+                    num_layers=package['num_layers'], bidirectional=package['bidirectional'],
+                    num_heads=package['num_heads'], cycle_amount=package['cycle_amount'],
+                    speakers=package['speakers'])
+
         model.load_state_dict(package['state_dict'])
+
         return model
 
     @staticmethod
     def serialize(model, optimizer, epoch, tr_loss=None, cv_loss=None):
         package = {
             # hyper-parameter
-            'in_channels': model.in_channels, 'out_channels': model.out_channels, 'length': model.length,
-            'hidden_channels': model.hidden_channels, 'num_layers': model.num_layers,
-            'bidirectional': model.bidirectional, 'num_heads': model.num_heads,
-            'cycle_amount': model.cycle_amount, 'speakers': model.speakers,
+            'in_channels': model.in_channels, 'out_channels': model.out_channels,
+            'kernel_size': model.kernel_size, 'length': model.length,
+            'hidden_channels': model.hidden_channels, 'affine': model.affine,
+            'num_layers': model.num_layers, 'bidirectional': model.bidirectional,
+            'num_heads': model.num_heads, 'cycle_amount': model.cycle_amount,
+            'speakers': model.speakers,
 
             # state
             'state_dict': model.state_dict(),
@@ -490,8 +516,10 @@ if __name__ == "__main__":
 
     model = GALR(in_channels=128,
                  out_channels=64,
-                 length=200,
+                 kernel_size=16,
+                 length=100,
                  hidden_channels=128,
+                 affine=32,
                  num_layers=1,
                  bidirectional=True,
                  num_heads=8,
