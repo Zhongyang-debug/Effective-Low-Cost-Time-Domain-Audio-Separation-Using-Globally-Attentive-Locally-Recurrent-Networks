@@ -322,7 +322,7 @@ class Separation(nn.Module):
 
         B, _, K, S = x.shape
 
-        x = x.reshape(self.Spk, -1, K, S)  # 调整torch.Size([2, 64, 200, 322])
+        x = x.reshape(B*self.Spk, -1, K, S)  # 调整torch.Size([2, 64, 200, 322])
 
         x = self._over_add(x, gap)  # torch.Size([2, 64, 31999])
 
